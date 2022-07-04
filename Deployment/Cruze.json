@@ -1,0 +1,356 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+  "parameters": {
+    "ApplicationName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ProductName": {
+      "type": "string"
+    },
+    "Team": {
+      "type": "string"
+    },
+    "teamEmails": {
+      "minLength": 1,
+      "type": "array",
+      "metadata": {
+        "description": "The email used to send alerts to."
+      }
+    },
+    "autoScaleNotification": {
+      "type": "string",
+      "metadata": {
+        "description": "The email used to send AutoScale Alerts to. *Note* this needs to be a string type."
+      }
+    },
+    "Contact": {
+      "type": "string"
+    },
+    "Environment": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "test",
+        "qa",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Environment type"
+      }
+    },
+    "locations": {
+      "type": "array",
+      "defaultValue": [ "westus2", "westcentralus" ],
+
+      "metadata": {
+        "description": "One or more locations you need to deploy to."
+      }
+    },
+    "SkuName": {
+      "type": "string",
+      "defaultValue": "F1",
+      "allowedValues": [
+        "F1",
+        "D1",
+        "B1",
+        "B2",
+        "B3",
+        "S1",
+        "S2",
+        "S3",
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "metadata": {
+        "description": "Describes plan's pricing tier and capacity. Check details at https://azure.microsoft.com/en-us/pricing/details/app-service/"
+      }
+    },
+    "NumberOfWorkers": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "Number of Workers for web server farm"
+      }
+    },
+    "monitorPath": {
+      "type": "string"
+    },
+    "ContainerSASToken": {
+      "type": "securestring",
+      "defaultValue": "?sv=2018-03-28&ss=b&srt=sco&sp=rl&se=2026-01-01T07:59:59Z&st=2019-03-26T22:50:03Z&spr=https&sig=f1nvDrTugaoqaTYjK70krJm1FAjNPjunxVLIgNoV4UY%3D"
+
+    }
+  },
+  "variables": {
+    "WebAppName": "[concat(parameters('ApplicationName'),'-', parameters('Environment'),'-api-')]",
+    "WebAppName2": "[concat(parameters('ApplicationName'),'2-', parameters('Environment'),'-api-')]",
+    "AppServiceId": "[resourceId('Microsoft.Web/sites', variables('WebAppName'))]",
+    "AppServicePlanName": "[toLower(concat(parameters('ApplicationName'),'-', parameters('Environment'),'-plan-'))]",
+    "AppServicePlanId": "[resourceId('Microsoft.Web/serverfarms', variables('AppServicePlanName'))]",
+    "templateBaseUrl": "https://linkedarmtemplateprod01.blob.core.windows.net/armtemplates/",
+    "ModernAlertsTemplateUrl": "[concat(variables('templateBaseUrl'), 'ModernAlertsARMTemplate.json')]",
+    "AutoscaleTemplateUrl": "[concat(variables('templateBaseUrl'), 'AutoScaleARMTemplate.json')]",
+    "appInsightsName": "[concat(parameters('ApplicationName'), '-', parameters('environment'), '-appinsights')]",
+    "trafficManagerProfilesName": "[concat(parameters('ApplicationName'),'-',parameters('environment'),'-trmg')]"
+
+
+  },
+  "resources": [
+  {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2018-02-01",
+      "name": "[concat(variables('WebAppName'), parameters('locations')[copyIndex()])]",
+      "location": "[parameters('locations')[copyIndex()]]",
+      "tags": {
+        "ApplicationName": "[parameters('ApplicationName')]",
+        "Environment": "[parameters('Environment')]",
+        "ProductName": "[parameters('ProductName')]",
+        "Team": "[parameters('Team')]",
+        "Contact": "[parameters('Contact')]"
+      },
+      "dependsOn": [
+        "[concat(variables('AppServicePlanId'), parameters('locations')[copyIndex()])]"
+      ],
+      "properties": {
+        "name": "[concat(variables('WebAppName'), parameters('locations')[copyIndex()])]",
+        "serverFarmId": "[concat(variables('AppServicePlanId'), parameters('locations')[copyIndex()])]"
+      },
+      "resources": [
+        {
+          "type": "config",
+          "name": "appsettings",
+          "apiVersion": "2018-02-01",
+          "dependsOn": [
+            "[concat(variables('WebAppName'), parameters('locations')[copyIndex()])]"
+          ],
+          "tags": {
+            "displayName": "appsettings"
+          },
+          "properties": {
+          }
+        }
+
+      ],
+      "copy": {
+        "name": "sitesCopyCount",
+        "count": "[length(parameters('locations'))]"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2018-02-01",
+      "name": "[concat(variables('WebAppName2'), parameters('locations')[copyIndex()])]",
+      "location": "[parameters('locations')[copyIndex()]]",
+      "tags": {
+        "ApplicationName": "[parameters('ApplicationName')]",
+        "Environment": "[parameters('Environment')]",
+        "ProductName": "[parameters('ProductName')]",
+        "Team": "[parameters('Team')]",
+        "Contact": "[parameters('Contact')]"
+      },
+      "dependsOn": [
+        "[concat(variables('AppServicePlanId'), parameters('locations')[copyIndex()])]"
+      ],
+      "properties": {
+        "name": "[concat(variables('WebAppName2'), parameters('locations')[copyIndex()])]",
+        "serverFarmId": "[concat(variables('AppServicePlanId'), parameters('locations')[copyIndex()])]"
+      },
+      "resources": [
+        {
+          "type": "config",
+          "name": "appsettings",
+          "apiVersion": "2018-02-01",
+          "dependsOn": [
+            "[concat(variables('WebAppName2'), parameters('locations')[copyIndex()])]"
+          ],
+          "tags": {
+            "displayName": "appsettings"
+          },
+          "properties": {
+          }
+        }
+
+      ],
+      "copy": {
+        "name": "sitesCopyCount",
+        "count": "[length(parameters('locations'))]"
+      }
+    },    
+    {
+      "apiVersion": "2015-08-01",
+      "name": "[concat(variables('AppServicePlanName'), parameters('locations')[copyIndex()])]",
+      "type": "Microsoft.Web/serverfarms",
+      "location": "[parameters('locations')[copyIndex()]]",
+      "tags": {
+        "ApplicationName": "[parameters('ApplicationName')]",
+        "Environment": "[parameters('Environment')]",
+        "ProductName": "[parameters('ProductName')]",
+        "Team": "[parameters('Team')]",
+        "Contact": "[parameters('Contact')]"
+      },
+      "sku": {
+        "name": "[parameters('skuName')]"
+      },
+      "properties": {
+        "name": "[concat(variables('AppServicePlanName'), parameters('locations')[copyIndex()])]",
+        "numberOfWorkers": "[parameters('NumberOfWorkers')]"
+      },
+      "copy": {
+        "name": "plansCopyCount",
+        "count": "[length(parameters('locations'))]"
+      }
+
+    },
+    {
+      "name": "[variables('appInsightsName')]",
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2015-05-01",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "ApplicationId": "[variables('appInsightsName')]",
+        "Application_Type": "web",
+        "Flow_Type": "Bluefield",
+        "Request_Source": "rest"
+      },
+      "tags": {
+        "DisplayName": "AppInsights",
+        "ApplicationName": "[parameters('ApplicationName')]",
+        "ProductName": "[parameters('ProductName')]",
+        "Team": "[parameters('Team')]",
+        "Contact": "[parameters('Contact')]",
+        "Environment": "[parameters('Environment')]",
+        "Contact Email Name": "[parameters('Contact')]"
+      }
+    },
+    {
+      "apiVersion": "2018-04-01",
+      "type": "Microsoft.Network/trafficManagerProfiles",
+      "name": "[variables('trafficManagerProfilesName')]",
+      "location": "global",
+      "tags": {
+        "ProductName": "[parameters('productName')]",
+        "Team": "[parameters('team')]",
+        "Contact": "[parameters('contact')]",
+        "State": "Live",
+        "Environment": "[parameters('environment')]"
+      },
+      "properties": {
+        "profileStatus": "Enabled",
+        "trafficRoutingMethod": "Performance",
+        "dnsConfig": {
+          "relativeName": "[variables('trafficManagerProfilesName')]",
+          "fqdn": "[concat(variables('trafficManagerProfilesName'),'.trafficmanager.net')]",
+          "ttl": 30
+        },
+        "monitorConfig": {
+          "protocol": "HTTPS",
+          "port": 443,
+          "path": "[parameters('monitorPath')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/trafficManagerProfiles/azureEndpoints",
+      "apiVersion": "2018-04-01",
+
+      "copy": {
+        "count": "[length(parameters('locations'))]",
+        "name": "trafficManagerCount"
+      },
+
+      "dependsOn": [
+        "[concat('Microsoft.Network/trafficManagerProfiles/',variables('trafficManagerProfilesName'))]"
+      ],
+      "name": "[concat(variables('trafficManagerProfilesName'),'/', concat(variables('WebAppName'), parameters('locations')[copyIndex()]))]",
+      "properties": {
+        "endpointStatus": "Enabled",
+        "targetResourceId": "[resourceId('Microsoft.Web/sites',  concat(variables('WebAppName'), parameters('locations')[copyIndex()]))]",
+        "target": "[concat(variables('WebAppName'),parameters('locations')[copyIndex()],'.azurewebsites.net')]"
+      },
+      "tags": {
+        "ProductName": "[parameters('productName')]",
+        "Team": "[parameters('team')]",
+        "Contact": "[parameters('contact')]",
+        "State": "Live",
+        "Environment": "[parameters('environment')]"
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2018-05-01",
+      "name": "[concat('ModernAlertsLinkedTemplate-', parameters('locations')[copyIndex()])]",
+
+      "copy": {
+        "name": "alertsCopyCount",
+        "count": "[length(parameters('locations'))]"
+      },
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(variables('ModernAlertsTemplateUrl'),parameters('containerSasToken'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "teamEmails": {
+            "value": "[parameters('teamEmails')]"
+          },
+          "ApplicationName": {
+            "value": "[parameters('ApplicationName')]"
+          },
+          "Environment": {
+            "value": "[parameters('Environment')]"
+          },
+          "Location": {
+            "value": "[parameters('locations')[copyIndex()]]"
+          },
+          "AppServiceId": {
+            "value": "[concat(variables('AppServiceId'), parameters('locations')[copyIndex()])]"
+          },
+          "AppServicePlanId": {
+            "value": "[concat(variables('AppServicePlanId'), parameters('locations')[copyIndex()])]"
+          },
+          "AppServicePlanName": {
+            "value": "[concat(variables('AppServicePlanName'), parameters('locations')[copyIndex()])]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2018-05-01",
+      "name": "[concat('AutoScaleLinkedTemplate-', parameters('locations')[copyIndex()])]",
+
+      "copy": {
+        "name": "autoscaleCopyCount",
+        "count": "[length(parameters('locations'))]"
+      },
+
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(variables('AutoScaleTemplateUrl'),parameters('containerSasToken'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "teamEmails": {
+            "value": "[parameters('autoScaleNotification')]"
+          },
+          "Location": {
+            "value": "[parameters('locations')[copyIndex()]]"
+          },
+          "AppServicePlanId": {
+            "value": "[concat(variables('AppServicePlanId'), parameters('locations')[copyIndex()])]"
+          },
+          "AppServicePlanName": {
+            "value": "[concat(variables('AppServicePlanName'), parameters('locations')[copyIndex()])]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}

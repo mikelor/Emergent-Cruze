@@ -1,0 +1,139 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+name: $(Build.DefinitionName)_$(Build.SourceBranchName)_$(Date:yyyyMMdd)$(Rev:.r)
+
+### branch triggers. Commenting out to trigger builds on all branches
+trigger:
+  branches:
+    include:
+    - main
+
+  paths:
+    include:
+    - src/CruzeApi/*
+    - ./*
+
+variables: 
+  - group: PipelineVariables
+
+resources:
+ ### PRE-REQUISITE: ENSURE THAT THE FOLLOWING PIPELINE ARTIFACTS ARE REFERENCED. Reference to Code Coverage Files
+  pipelines:
+  - pipeline: DevOps
+    project: SoftwareTransformation
+    source: DevOps 
+    branch: 'refs/heads/master'
+
+  ### PRE-REQUISITE: ENSURE THAT THE FOLLOWING REPOSITORY ARTIFACTS ARE REFERENCED FOR SHARED YAML TEMPLATES
+  repositories:
+  - repository: templates  
+    type: git 
+    name: SoftwareTransformation/DevOps 
+    ref: refs/heads/master
+
+stages:
+- stage: CI_ArtifactsBuildStage
+  displayName: CI_ArtifactsBuildStage
+  jobs:
+  ### Do any prep work here such as config transformations that will be used in the CI job.
+  ### If there are no prep work needed. Leave the steps as is.
+  - job: PrepForBuild
+    pool:
+        name: 'Hosted Windows 2019 with VS2019' # Valid Values: 'OnPremAgents' - Hosted:'Hosted VS2017',  'Hosted macOS', 'Hosted Ubuntu 1604'
+    steps:
+    ### ALWAYS INCLUDE THIS IN THE PREP JOB
+    ### ALL SOURCES DIRECTORY WILL BE UPLOADED IN THE ENTIRE PIPELINE SO IT CAN BE USED REPEATEDLY
+    - upload: $(Build.SourcesDirectory)
+      artifact: Prepped
+      displayName: 'Uploading Prepped Sources' 
+
+    ### Uses CI Shared Templates under https://itsals.visualstudio.com/SoftwareTransformation/_git/DevOps    
+  - template: YAML/Builds/NetCore/ContinousIntegration.yml@templates  # Template reference
+    parameters:
+      ### Application Build Process   
+      ApplicationName: 'CruzeApi'
+      BuildConfiguration: 'Debug'
+      SonarScanSolutionFile: './src/CruzeApi/CruzeApi.csproj' 
+      ProjectFileLocation: './src/CruzeApi/CruzeApi.csproj'
+      AgentPoolName: 'Hosted Windows 2019 with VS2019'
+      PublishArtifacts: 'true'
+      NetCoreSDKVersion: '3.1.x'
+      SelfContained: false
+      ### Unit Tests
+      TestProjectFileLocation: './src/CruzeApi/CruzeApi.csproj'
+      CoverageThreshold: '0'
+      CheckCoverage: 'false'
+      RunSettingsFileLocation: ''
+      TestCategories: '' 
+      ### Sonar Cloud 
+      ### Setting to Empty so we don't run sonarcloud scans
+      projectKey: ''
+      projectName: ''
+
+- stage: CD_Delivery
+  displayName: CD_Delivery_Test
+  dependsOn:
+    - CI_ArtifactsBuildStage
+  jobs:
+  #####
+  ###
+  ### CD/TEST
+  ###
+  ####
+  - deployment: CruzeApiDeployToTest
+    condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
+    ### Condition so that the deployment only occurs on a particular branch
+    ### condition: eq(variables['Build.SourceBranch'], 'master')
+    pool:
+        name: 'Hosted Windows 2019 with VS2019' # Valid Values: 'OnPremAgents' - Hosted:'Hosted VS2017',  'Hosted macOS', 'Hosted Ubuntu 1604'
+    displayName: CruzeApiDeployToTest
+    environment: test
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          ### Downloading Pipeline artifacts
+          ### https://github.com/microsoft/azure-pipelines-yaml/blob/master/design/pipeline-artifacts.md
+          - download: current
+            displayName: 'Downloading Pipeline artifacts'
+          
+          ### Shows all pipeline artifacts
+          - script: ls $(Pipeline.Workspace)
+            displayName: 'Shows all pipeline artifacts'
+
+          ### Shows if the ARM templates have been downloaded appropriately
+          - script: ls $(Pipeline.Workspace)/DeploymentResources
+            displayName: 'Shows if the ARM templates have been downloaded appropriately'
+
+          ### Creating Azure Resources under the resource group using ARM template from Pipeline Artifacts
+          - task: AzureResourceGroupDeployment@2
+            displayName: 'Azure Deployment:Create Or Update Resource Group action on cruze-test-group Resource Group'
+            inputs:
+              azureSubscription: 'cruze-test-group-SPN'
+              action: 'Create Or Update Resource Group'
+              resourceGroupName: 'cruze-test-group'
+              location: 'West US 2'
+              csmFile: '$(Pipeline.Workspace)/DeploymentResources/Cruze.json'
+              csmParametersFile: '$(Pipeline.Workspace)/DeploymentResources/Cruze.parameters.test.json'
+          
+          - task: AzureRmWebAppDeployment@4
+            displayName: 'Deploy Azure App Service'
+            inputs:
+              azureSubscription: 'cruze-test-group-SPN'
+              resourceGroupName: 'cruze-test-group'
+              ### Web application Azure App Service Type
+              appType: webApp
+              WebAppName: 'cruze-test-api-westus2'
+              packageForLinux: '$(Pipeline.Workspace)/CruzeApi_Package/*.zip'
+
+          - task: AzureRmWebAppDeployment@4
+            displayName: 'Deploy Azure App Service'
+            inputs:
+              azureSubscription: 'cruze-test-group-SPN'
+              resourceGroupName: 'cruze-test-group'
+              ### Web application Azure App Service Type
+              appType: webApp
+              WebAppName: 'cruze2-test-api-westus2'
+              packageForLinux: '$(Pipeline.Workspace)/CruzeApi_Package/*.zip'

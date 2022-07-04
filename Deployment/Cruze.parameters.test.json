@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "ApplicationName": {
+      "value": "cruze"
+    },
+    "ProductName": {
+      "value": "Cruze"
+    },
+    "Team": {
+      "value": "AI CoE"
+    },
+    "teamEmails": {
+      "value": [
+        {
+          "name": "AI CoE",
+          "emailAddress": "aicoe@alaskaair.com"
+        },
+        {
+          "name": "AI CoE 2",
+          "emailAddress": "aicoe2@alaskaair.com"
+        }
+      ]
+    },
+    "autoScaleNotification": {
+      "value": "aicoe@alaskaair.com"
+    },
+    "Contact": {
+      "value": "aicoe@alaskaair.com"
+    },
+    "Environment": {
+      "value": "test"
+    },
+    "locations": {
+      "value": [ "westus2" ]
+    },
+    "SkuName": {
+      "value": "S1"
+    },
+    "NumberOfWorkers": {
+      "value": 1
+    },
+    "monitorPath": {
+      "value": "/weatherforecast"
+    }
+  }
+}
